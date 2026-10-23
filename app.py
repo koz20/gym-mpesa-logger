@@ -102,59 +102,53 @@ def is_duplicate_transaction(sheet, ref_id):
 def home():  
     return gym_portal()
 
-@app.route("/mpesa-webhook", methods=["POST"])  
-def mpesa_webhook():  
-    data = request.get_json(silent=True) or {}  
-    try:  
-        stk_callback = data.get("Body", {}).get("stkCallback", {})  
-        result_code = stk_callback.get("ResultCode", 0)  
+@app.route('/mpesa-webhook', methods=['POST'])
+def mpesa_webhook():
+    data = request.get_json(force=True, silent=True) or {}
+    logging.info(f"Received M-Pesa Payload: {data}")
 
-        if result_code != 0:  
-            return jsonify({"status": "ignored", "reason": "Transaction failed or cancelled"}), 200  
+    # 1. Validation Ping Response (Required by Safaricom during URL registration)
+    # If Safaricom sends a validation test or empty payload, accept it immediately
+    if not data or "TransID" not in data:
+        return jsonify({
+            "ResultCode": 0,
+            "ResultDesc": "Accepted"
+        })
 
-        meta_items = stk_callback.get("CallbackMetadata", {}).get("Item", [])  
-        payment_data = {item["Name"]: item.get("Value") for item in meta_items if "Name" in item}  
+    # 2. Confirmation Payload (Actual payment received)
+    try:
+        # Extract payment details from Safaricom JSON payload
+        trans_id = data.get('TransID', '')
+        trans_amount = data.get('TransAmount', '')
+        trans_time = data.get('TransTime', '')
+        phone_number = data.get('MSISDN', '')
+        first_name = data.get('FirstName', '')
+        last_name = data.get('LastName', '')
+        account_number = data.get('BillRefNumber', '')
 
-        amount = payment_data.get("Amount", 0)  
-        ref_id = str(payment_data.get("MpesaReceiptNumber", "")).strip().upper()  
-        phone_number = normalize_phone(payment_data.get("PhoneNumber", ""))  
-        timestamp = get_nairobi_timestamp()  
-        member_name = str(payment_data.get("BillRefNumber", "Gym Member")).strip()
+        payer_name = f"{first_name} {last_name}".strip() or "Unknown"
 
-        client = get_gspread_client()  
-        sh = client.open_by_key(GYM_SHEET_ID)  
-        ws = sh.worksheet("Sheet1")  
+        # Log into Google Sheet ("Gym Member Payment Tracker")
+        sheet = get_google_sheet()
+        if sheet:
+            sheet.append_row([
+                trans_time,
+                trans_id,
+                trans_amount,
+                payer_name,
+                phone_number,
+                account_number
+            ])
+            logging.info(f"Payment {trans_id} logged to Google Sheet successfully.")
 
-        if is_duplicate_transaction(ws, ref_id):  
-            return jsonify({"status": "success", "message": "Duplicate transaction"}), 200  
+    except Exception as e:
+        logging.error(f"Error processing payment payload: {e}")
 
-        receipt_url = f"{APP_BASE_URL}/receipt/{ref_id}"  
-        hyperlink_formula = f'=HYPERLINK("{receipt_url}", "Download Receipt")'  
-
-        # Append row to Google Sheet
-        ws.append_row([  
-            str(timestamp), str(ref_id), str(phone_number), str(member_name),  
-            float(amount), "Paid", "M-Pesa", hyperlink_formula  
-        ], value_input_option="USER_ENTERED")  
-
-        # Save locally in SQLite as safety backup
-        new_record = GymPaymentRecord(  
-            timestamp=timestamp,  
-            ref_id=ref_id,  
-            phone_number=phone_number,  
-            member_name=member_name,  
-            amount=float(amount),  
-            status="Paid",  
-            channel="M-Pesa"  
-        )  
-        db.session.add(new_record)  
-        db.session.commit()  
-
-        return jsonify({"status": "success", "message": "Gym payment logged"}), 200  
-    except Exception as e:  
-        db.session.rollback()  
-        logger.error(f"Webhook error: {e}")  
-        return jsonify({"status": "error", "message": str(e)}), 500  
+    # Always return ResultCode 0 to acknowledge receipt to Safaricom
+    return jsonify({
+        "ResultCode": 0,
+        "ResultDesc": "Success"
+    })
 
 @app.route("/receipt/<ref_id>", methods=["GET"])  
 def generate_pdf_receipt(ref_id):  
