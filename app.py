@@ -98,8 +98,8 @@ def is_duplicate_transaction(sheet, ref_id):
 # ROUTES  
 # ==========================================  
 
-@app.route("/", methods=["GET"])  
-def home():  
+@app.route('/mpesa-webhook', methods=['GET', 'POST'])
+def mpesa_webhook():  
     return gym_portal()
 
 @app.route('/mpesa-webhook', methods=['GET', 'POST'])
