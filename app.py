@@ -102,22 +102,27 @@ def is_duplicate_transaction(sheet, ref_id):
 def home():  
     return gym_portal()
 
-@app.route('/mpesa-webhook', methods=['POST'])
+@app.route('/mpesa-webhook', methods=['GET', 'POST'])
 def mpesa_webhook():
-    data = request.get_json(force=True, silent=True) or {}
-    logging.info(f"Received M-Pesa Payload: {data}")
-
-    # 1. Validation Ping Response (Required by Safaricom during URL registration)
-    # If Safaricom sends a validation test or empty payload, accept it immediately
-    if not data or "TransID" not in data:
+    # Safaricom validation ping (GET or POST)
+    if request.method == 'GET' or not request.is_json:
         return jsonify({
             "ResultCode": 0,
             "ResultDesc": "Accepted"
         })
 
-    # 2. Confirmation Payload (Actual payment received)
+    data = request.get_json(force=True, silent=True) or {}
+    logging.info(f"Received M-Pesa Payload: {data}")
+
+    # Check if this is a validation ping payload
+    if "TransID" not in data:
+        return jsonify({
+            "ResultCode": 0,
+            "ResultDesc": "Accepted"
+        })
+
+    # Confirmation Payload - Log to Google Sheet
     try:
-        # Extract payment details from Safaricom JSON payload
         trans_id = data.get('TransID', '')
         trans_amount = data.get('TransAmount', '')
         trans_time = data.get('TransTime', '')
@@ -128,7 +133,6 @@ def mpesa_webhook():
 
         payer_name = f"{first_name} {last_name}".strip() or "Unknown"
 
-        # Log into Google Sheet ("Gym Member Payment Tracker")
         sheet = get_google_sheet()
         if sheet:
             sheet.append_row([
@@ -144,7 +148,6 @@ def mpesa_webhook():
     except Exception as e:
         logging.error(f"Error processing payment payload: {e}")
 
-    # Always return ResultCode 0 to acknowledge receipt to Safaricom
     return jsonify({
         "ResultCode": 0,
         "ResultDesc": "Success"
