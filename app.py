@@ -7,7 +7,7 @@ from google.oauth2.service_account import Credentials
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
-# Google Sheets Setup
+# Google Sheets Setup with Diagnostics
 def get_google_sheet():
     try:
         scope = [
@@ -15,13 +15,19 @@ def get_google_sheet():
             "https://www.googleapis.com/auth/drive"
         ]
         creds_file = 'credentials.json'
+        logging.info(f"Checking credentials path: {os.path.abspath(creds_file)}")
+        logging.info(f"Does credentials.json exist?: {os.path.exists(creds_file)}")
+
         if os.path.exists(creds_file):
             creds = Credentials.from_service_account_file(creds_file, scopes=scope)
             client = gspread.authorize(creds)
             sheet_id = "1026CotLZWHNTc5nZJyX6wF2LrRO78ao_IBFmkC6Kvo8"
-            return client.open_by_key(sheet_id).sheet1
+            sheet = client.open_by_key(sheet_id).sheet1
+            return sheet
+        else:
+            logging.error("credentials.json file was not found by Flask!")
     except Exception as e:
-        logging.error(f"Google Sheets connection error: {e}")
+        logging.error(f"Google Sheets connection exception detail: {e}")
     return None
 
 @app.route('/', methods=['GET'])
@@ -30,24 +36,15 @@ def home():
 
 @app.route('/mpesa-webhook', methods=['GET', 'POST'], strict_slashes=False)
 def mpesa_webhook():
-    # Handle validation pings or non-JSON requests
     if request.method == 'GET' or not request.is_json:
-        return jsonify({
-            "ResultCode": 0,
-            "ResultDesc": "Accepted"
-        })
+        return jsonify({"ResultCode": 0, "ResultDesc": "Accepted"})
 
     data = request.get_json(force=True, silent=True) or {}
     logging.info(f"Received M-Pesa Payload: {data}")
 
-    # If payload lacks transaction ID, treat as validation ping
     if "TransID" not in data:
-        return jsonify({
-            "ResultCode": 0,
-            "ResultDesc": "Accepted"
-        })
+        return jsonify({"ResultCode": 0, "ResultDesc": "Accepted"})
 
-    # Confirmation Payload - Log to Google Sheet
     try:
         trans_id = data.get('TransID', '')
         trans_amount = data.get('TransAmount', '')
@@ -60,7 +57,6 @@ def mpesa_webhook():
 
         sheet = get_google_sheet()
         if sheet:
-            # Column mapping: [Timestamp, Ref, Phone, Member, Amount, Status, Channel, Receipt Link]
             sheet.append_row([
                 trans_time,
                 trans_id,
@@ -73,15 +69,12 @@ def mpesa_webhook():
             ])
             logging.info(f"Payment {trans_id} logged to Google Sheet successfully.")
         else:
-            logging.error("Failed to connect to Google Sheet.")
+            logging.error("Failed to connect to Google Sheet (sheet object is None).")
 
     except Exception as e:
         logging.error(f"Error processing payment payload: {e}")
 
-    return jsonify({
-        "ResultCode": 0,
-        "ResultDesc": "Success"
-    })
+    return jsonify({"ResultCode": 0, "ResultDesc": "Success"})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
