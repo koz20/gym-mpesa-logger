@@ -41,6 +41,7 @@ def validate_payment():
     })
 
 # 2. Confirmation Endpoint (Logs the successful payment to Google Sheets)
+# 2. Confirmation Endpoint (Logs the successful payment to Google Sheets with duplicate check)
 @app.route("/gym-webhook", methods=["POST"])
 def gym_webhook():
     try:
@@ -56,10 +57,21 @@ def gym_webhook():
         last_name = data.get("LastName", "Unknown")
         full_name = f"{first_name} {last_name}".strip()
 
-        # Connect to Google Sheets and append row
+        # Connect to Google Sheets
         sheet = get_sheet_connection()
-        sheet.append_row([trans_time, full_name, phone, amount, trans_id])
 
+        # Check if TransID already exists in Column 5 (Transaction ID column)
+        existing_trans_ids = sheet.col_values(5)
+        if trans_id in existing_trans_ids:
+            print(f"Duplicate transaction detected: {trans_id}. Skipping duplicate log.")
+            # Still return ResultCode 0 so M-Pesa stops retrying
+            return jsonify({
+                "ResultCode": 0,
+                "ResultDesc": "Success - Duplicate Ignored"
+            })
+
+        # Append row if it's a new transaction
+        sheet.append_row([trans_time, full_name, phone, amount, trans_id])
         print(f"Successfully logged payment {trans_id} for {full_name} to Google Sheets!")
 
         # Safaricom expects a 200 OK response with ResultCode 0
@@ -74,6 +86,3 @@ def gym_webhook():
             "ResultCode": 1,
             "ResultDesc": str(e)
         }), 500
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
