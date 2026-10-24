@@ -8,14 +8,12 @@ from google.oauth2.service_account import Credentials
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
-# Google Sheets Setup via Environment Variable
 def get_google_sheet():
     try:
         scope = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
-        
         creds_json_str = os.environ.get('GOOGLE_CREDENTIALS_JSON')
         if not creds_json_str:
             logging.error("GOOGLE_CREDENTIALS_JSON environment variable is missing!")
@@ -35,13 +33,13 @@ def get_google_sheet():
 def home():
     return "Gym Payment Handler is Live!", 200
 
-@app.route('/mpesa-webhook', methods=['GET', 'POST'], strict_slashes=False)
-def mpesa_webhook():
+@app.route('/gym-webhook', methods=['GET', 'POST'], strict_slashes=False)
+def gym_webhook():
     if request.method == 'GET' or not request.is_json:
         return jsonify({"ResultCode": 0, "ResultDesc": "Accepted"})
 
     data = request.get_json(force=True, silent=True) or {}
-    logging.info(f"Received M-Pesa Payload: {data}")
+    logging.info(f"Received Payload: {data}")
 
     if "TransID" not in data:
         return jsonify({"ResultCode": 0, "ResultDesc": "Accepted"})
