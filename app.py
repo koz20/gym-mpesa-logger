@@ -1,80 +1,79 @@
-import os
-import json
-import logging
 from flask import Flask, request, jsonify
 import gspread
 from google.oauth2.service_account import Credentials
+import os
+import json
 
 app = Flask(__name__)
-logging.basicConfig(level=logging.INFO)
 
-def get_google_sheet():
-    try:
-        scope = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
-        creds_json_str = os.environ.get('GOOGLE_CREDENTIALS_JSON')
-        if not creds_json_str:
-            logging.error("GOOGLE_CREDENTIALS_JSON environment variable is missing!")
-            return None
+# Google Sheets Setup
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+SHEET_ID = "1026CotLZWHNTc5nZJyX6wF2LrRO78ao_IBFmkC6Kvo8"
 
-        creds_dict = json.loads(creds_json_str)
-        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-        client = gspread.authorize(creds)
-        sheet_id = "1026CotLZWHNTc5nZJyX6wF2LrRO78ao_IBFmkC6Kvo8"
-        return client.open_by_key(sheet_id).sheet1
+def get_sheet_connection():
+    # Load credentials from Render environment variable or local file
+    creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+    if creds_json:
+        creds_dict = json.loads(creds_json)
+        creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+    else:
+        # Fallback to local file if testing locally
+        creds = Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
+    
+    client = gspread.authorize(creds)
+    return client.open_by_key(SHEET_ID).sheet1
 
-    except Exception as e:
-        logging.error(f"Google Sheets connection error: {e}")
-    return None
-
-@app.route('/', methods=['GET'])
+@app.route("/")
 def home():
-    return "Gym Payment Handler is Live!", 200
+    return "Gym Payment Handler is Live!"
 
-@app.route('/gym-webhook', methods=['GET', 'POST'], strict_slashes=False)
+# 1. Validation Endpoint (M-Pesa checks this before accepting payment)
+@app.route("/gym-validate", methods=["POST"])
+def validate_payment():
+    data = request.get_json()
+    print("Validation payload received:", data)
+    
+    # You can add custom validation logic here (e.g., check if member account exists)
+    # For now, we accept all incoming transactions
+    return jsonify({
+        "ResultCode": 0,
+        "ResultDesc": "Accepted"
+    })
+
+# 2. Confirmation Endpoint (Logs the successful payment to Google Sheets)
+@app.route("/gym-webhook", methods=["POST"])
 def gym_webhook():
-    if request.method == 'GET' or not request.is_json:
-        return jsonify({"ResultCode": 0, "ResultDesc": "Accepted"})
-
-    data = request.get_json(force=True, silent=True) or {}
-    logging.info(f"Received Payload: {data}")
-
-    if "TransID" not in data:
-        return jsonify({"ResultCode": 0, "ResultDesc": "Accepted"})
-
     try:
-        trans_id = data.get('TransID', '')
-        trans_amount = data.get('TransAmount', '')
-        trans_time = data.get('TransTime', '')
-        phone_number = data.get('MSISDN', '')
-        first_name = data.get('FirstName', '')
-        last_name = data.get('LastName', '')
+        data = request.get_json()
+        print("Confirmation payload received:", data)
 
-        payer_name = f"{first_name} {last_name}".strip() or "Unknown"
+        # Extract transaction fields sent by Safaricom
+        trans_id = data.get("TransID", "N/A")
+        amount = data.get("TransAmount", "0")
+        trans_time = data.get("TransTime", "N/A")
+        phone = data.get("MSISDN", "N/A")
+        first_name = data.get("FirstName", "Unknown")
+        last_name = data.get("LastName", "Unknown")
+        full_name = f"{first_name} {last_name}".strip()
 
-        sheet = get_google_sheet()
-        if sheet:
-            sheet.append_row([
-                trans_time,
-                trans_id,
-                phone_number,
-                payer_name,
-                trans_amount,
-                "Success",
-                "M-Pesa",
-                ""
-            ])
-            logging.info(f"Payment {trans_id} logged to Google Sheet successfully.")
-        else:
-            logging.error("Failed to connect to Google Sheet (sheet object is None).")
+        # Connect to Google Sheets and append row
+        sheet = get_sheet_connection()
+        sheet.append_row([trans_time, full_name, phone, amount, trans_id])
+
+        print(f"Successfully logged payment {trans_id} for {full_name} to Google Sheets!")
+
+        # Safaricom expects a 200 OK response with ResultCode 0
+        return jsonify({
+            "ResultCode": 0,
+            "ResultDesc": "Success"
+        })
 
     except Exception as e:
-        logging.error(f"Error processing payment payload: {e}")
+        print(f"Error processing webhook: {e}")
+        return jsonify({
+            "ResultCode": 1,
+            "ResultDesc": str(e)
+        }), 500
 
-    return jsonify({"ResultCode": 0, "ResultDesc": "Success"})
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
