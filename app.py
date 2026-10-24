@@ -55,19 +55,21 @@ def mpesa_webhook():
         phone_number = data.get('MSISDN', '')
         first_name = data.get('FirstName', '')
         last_name = data.get('LastName', '')
-        account_number = data.get('BillRefNumber', '')
 
         payer_name = f"{first_name} {last_name}".strip() or "Unknown"
 
         sheet = get_google_sheet()
         if sheet:
+            # Column mapping: [Timestamp, Ref, Phone, Member, Amount, Status, Channel, Receipt Link]
             sheet.append_row([
                 trans_time,
                 trans_id,
-                trans_amount,
-                payer_name,
                 phone_number,
-                account_number
+                payer_name,
+                trans_amount,
+                "Success",
+                "M-Pesa",
+                ""
             ])
             logging.info(f"Payment {trans_id} logged to Google Sheet successfully.")
         else:
