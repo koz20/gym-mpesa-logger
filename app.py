@@ -24,11 +24,11 @@ def get_google_sheet():
         logging.error(f"Google Sheets connection error: {e}")
     return None
 
-@app.route('/mpesa-webhook', methods=['GET', 'POST'], strict_slashes=False)
-def mpesa_webhook():
+@app.route('/', methods=['GET'])
+def home():
     return "Gym Payment Handler is Live!", 200
 
-@app.route('/mpesa-webhook', methods=['GET', 'POST'])
+@app.route('/mpesa-webhook', methods=['GET', 'POST'], strict_slashes=False)
 def mpesa_webhook():
     # Handle validation pings or non-JSON requests
     if request.method == 'GET' or not request.is_json:
