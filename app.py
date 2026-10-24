@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 from flask import Flask, request, jsonify
 import gspread
@@ -7,27 +8,27 @@ from google.oauth2.service_account import Credentials
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
-# Google Sheets Setup with Diagnostics
+# Google Sheets Setup via Environment Variable
 def get_google_sheet():
     try:
         scope = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
-        creds_file = 'credentials.json'
-        logging.info(f"Checking credentials path: {os.path.abspath(creds_file)}")
-        logging.info(f"Does credentials.json exist?: {os.path.exists(creds_file)}")
+        
+        creds_json_str = os.environ.get('GOOGLE_CREDENTIALS_JSON')
+        if not creds_json_str:
+            logging.error("GOOGLE_CREDENTIALS_JSON environment variable is missing!")
+            return None
 
-        if os.path.exists(creds_file):
-            creds = Credentials.from_service_account_file(creds_file, scopes=scope)
-            client = gspread.authorize(creds)
-            sheet_id = "1026CotLZWHNTc5nZJyX6wF2LrRO78ao_IBFmkC6Kvo8"
-            sheet = client.open_by_key(sheet_id).sheet1
-            return sheet
-        else:
-            logging.error("credentials.json file was not found by Flask!")
+        creds_dict = json.loads(creds_json_str)
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        client = gspread.authorize(creds)
+        sheet_id = "1026CotLZWHNTc5nZJyX6wF2LrRO78ao_IBFmkC6Kvo8"
+        return client.open_by_key(sheet_id).sheet1
+
     except Exception as e:
-        logging.error(f"Google Sheets connection exception detail: {e}")
+        logging.error(f"Google Sheets connection error: {e}")
     return None
 
 @app.route('/', methods=['GET'])
