@@ -24,8 +24,8 @@ def get_google_sheet():
         logging.error(f"Google Sheets connection error: {e}")
     return None
 
-@app.route('/', methods=['GET'])
-def home():
+@app.route('/mpesa-webhook', methods=['GET', 'POST'], strict_slashes=False)
+def mpesa_webhook():
     return "Gym Payment Handler is Live!", 200
 
 @app.route('/mpesa-webhook', methods=['GET', 'POST'])
